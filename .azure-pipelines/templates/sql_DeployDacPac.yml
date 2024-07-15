@@ -1,0 +1,28 @@
+parameters:
+- name: dbServernameFqdn
+  type: string
+  default:
+- name: dbName
+  type: string
+  default:
+- name: dbUser
+  type: string
+  default:
+- name: dbPassword
+  type: string
+  default:
+- name: dacpacFile
+  type: string
+  default:
+- name: blockOnPossibleDataLoss
+  type: boolean
+  default: true
+- name: trustServerCertificate
+  type: boolean
+  default: false
+  
+
+steps:
+- pwsh: |
+    /opt/sqlpackage/sqlpackage /a:Publish /p:BlockOnPossibleDataLoss=${{ parameters.blockOnPossibleDataLoss }} /p:GenerateSmartDefaults=True /tcs:"Server=tcp:${{ parameters.dbServernameFqdn }},1433;Initial Catalog=${{ parameters.dbName }};Persist Security Info=False;User ID=${{ parameters.dbUser }};Password=${{ parameters.dbPassword }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=${{ parameters.trustServerCertificate }};Connection Timeout=30;" /sf:"${{ parameters.dacpacFile }}"
+  displayName: 'Deploy DACPACs'

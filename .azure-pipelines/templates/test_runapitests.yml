@@ -1,0 +1,47 @@
+parameters:
+- name: SystemTestArtifactLocation
+  type: string
+  default: "SystemTests"
+- name: RunSettingsFileName
+  type: string
+  default: ""
+- name: DatainitializerArtifactLocation
+  type: string
+  default: "TestDataInitializer"
+- name: ApiUrl
+  type: string
+  default: 
+
+steps:    
+- task: Tokenizer@0
+  displayName: 'Tokenizer to set correct Urls'
+  inputs:
+    sourceFilesPattern: '**/*.runsettings'
+    sourcePath: ${{ parameters.SystemTestArtifactLocation }}
+- task: Bash@3
+  displayName: 'Run API calls to store entities'
+  inputs:
+    targetType: 'inline'
+    script: |
+      chmod +x ${{ parameters.DatainitializerArtifactLocation }}/linux/DevFun.DataInitializer
+      ${{ parameters.DatainitializerArtifactLocation }}/linux/DevFun.DataInitializer -s ${{ parameters.ApiUrl }}
+- task: DotNetCoreCLI@2
+  displayName: "Run API System Tests"
+  inputs:
+    command: test
+    projects: "${{ parameters.SystemTestArtifactLocation }}/**/*System.Tests.dll"
+    arguments: "--logger trx --settings ${{ parameters.SystemTestArtifactLocation }}/${{ parameters.RunSettingsFileName }}"
+
+- ${{ if ne(coalesce(variables['system.debug'], 'false'),'false') }}:
+  - pwsh: |
+      $containers = docker ps --all --format "{{.Names}}"
+      $apiContainers = $containers |  Where-Object {$_ -match 'api'}
+  
+      foreach ($apiContainer in $apiContainers) {
+          Write-Host "Get logs of container: $apiContainer"
+          docker logs $apiContainer
+      }
+    displayName: 'Get logs of api containers'
+    target: host
+    continueOnError: true
+    condition: always()

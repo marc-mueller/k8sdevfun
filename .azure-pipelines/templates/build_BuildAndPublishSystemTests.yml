@@ -1,0 +1,44 @@
+parameters:
+- name: systemTestProject
+  type: string
+  default: 
+- name: testArtifactsCopyRoot
+  type: string
+  default: 
+- name: buildConfiguration
+  type: string
+  default: release
+- name: artifactName
+  type: string
+  default: SystemTests
+- name: externalEndpoint
+  type: string
+  default: 
+
+steps:
+- task: DotNetCoreCLI@2
+  displayName: 'dotnet publish SystemTests'
+  inputs:
+    command: publish
+    publishWebProjects: false
+    projects: ${{ parameters.systemTestProject }}
+    arguments: '--configuration ${{ parameters.buildConfiguration }} --output $(Build.StagingDirectory)/${{ parameters.artifactName }}'
+    zipAfterPublish: false
+    modifyOutputPath: false
+    ${{if parameters.externalEndpoint }}:
+      externalEndpoint: ${{ parameters.externalEndpoint }}
+- task: CopyFiles@2
+  displayName: 'Copy Files to: $(Build.StagingDirectory)/${{ parameters.artifactName }}'
+  inputs:
+    SourceFolder: ${{ parameters.testArtifactsCopyRoot }}
+    Contents: |
+        release.runsettings
+        container.runsettings
+        **/*Driver*.exe
+    TargetFolder: '$(Build.StagingDirectory)/${{ parameters.artifactName }}'
+    flattenFolders: true
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact: ${{ parameters.artifactName }}'
+  inputs:
+    PathtoPublish: '$(Build.StagingDirectory)/${{ parameters.artifactName }}'
+    ArtifactName: ${{ parameters.artifactName }}

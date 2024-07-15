@@ -1,0 +1,114 @@
+name : DevFun-Docs
+trigger:
+  branches:
+    include:
+    - master
+    - releases/*
+  paths:
+    include:
+    - docs/*
+
+variables:
+  DocsGeneratorVersion: 'latest'
+  DocsTemplate: '/templates/eisvogel.latex'
+  #Outputfile: '$(Build.ArtifactStagingDirectory)/devfun.pdf'
+  Outputfile: 'devfun.pdf'
+  DocsSourcesDirectory: '$(Build.SourcesDirectory)/docs'
+  DocProperties: 'docproperties.yaml'
+  
+
+# resources:
+#   containers:
+#   - container: docsgenerator
+#     image: 4tecture/docsgenerator:$(DocsGeneratorVersion)
+#     options: --entrypoint "node" --userns host
+
+stages:
+- stage: Docs
+  jobs:
+  - job: GenerateDocs
+    displayName: 'Generate the docs'
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    # container: docsgenerator
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        useGlobalJson: true
+    - template: templates/general_BuildVersioning.yml
+    - pwsh: az --version
+      displayName: 'Show Azure CLI version'
+    - pwsh: az devops configure --defaults organization=$(System.TeamFoundationCollectionUri) project=$(System.TeamProject) --use-git-aliases true
+      displayName: 'Set default Azure DevOps organization and project'
+    - pwsh: |
+        function Write-WITable {
+          param (
+              [string] $wiid
+              ) 
+          
+          $wi = az boards work-item show --id $wiid -o json | convertfrom-json
+
+          if($wi){
+              $sb = [System.Text.StringBuilder]::new()
+              
+              $idlink = "[$($wiid)](https://dev.azure.com/4tecture-demo/k8sDemo/_workitems/edit/$($wiid))"
+              $title = $wi.fields."System.Title".Trim()
+              $description = $wi.fields."System.Description".Trim() -replace "<li>","- " -replace "</li>","$([System.Environment]::Newline)" -replace "</?ul>","$([System.Environment]::Newline)$([System.Environment]::Newline)" -replace '</?\w*>',""
+
+              $col0Width = 25
+              $col1Width = (((($idlink -split '\r?\n' | Measure-Object -Maximum -Property Length).Maximum),((($title -split '\r?\n' | Measure-Object -Maximum -Property Length).Maximum), ((($description -split '\r?\n' | Measure-Object -Maximum -Property Length).Maximum))| Measure-Object -Maximum).Maximum) | Measure-Object -Maximum).Maximum
+
+              $sb.AppendLine("+$(''.PadRight($col0Width+2, '-'))+$(''.PadRight($col1Width+2, '-'))+") | Out-Null
+              $idLines = $idlink -split '\r?\n'
+              for ($i = 0; $i -lt $idLines.Count; $i++) {
+                  $col0 = $i -eq 0 ? "ID".PadRight($col0Width," ") : "".PadRight($col0Width," ")
+                  $col1 = $idLines[$i].PadRight($col1Width," ")
+                  $sb.AppendLine("| $($col0) | $($col1) |") | Out-Null
+              }
+
+              $sb.AppendLine("+$(''.PadRight($col0Width+2, '-'))+$(''.PadRight($col1Width+2, '-'))+") | Out-Null
+              $titleLines = $title -split '\r?\n'
+              for ($i = 0; $i -lt $titleLines.Count; $i++) {
+                  $col0 = $i -eq 0 ? "Title".PadRight($col0Width," ") : "".PadRight($col0Width," ")
+                  $col1 = $titleLines[$i].PadRight($col1Width," ")
+                  $sb.AppendLine("| $($col0) | $($col1) |") | Out-Null
+              }
+
+              $sb.AppendLine("+$(''.PadRight($col0Width+2, '-'))+$(''.PadRight($col1Width+2, '-'))+") | Out-Null
+              $descriptionLines = $description -split '\r?\n'
+              for ($i = 0; $i -lt $descriptionLines.Count; $i++) {
+                  $col0 = $i -eq 0 ? "Description".PadRight($col0Width," ") : "".PadRight($col0Width," ")
+                  $col1 = $descriptionLines[$i].PadRight($col1Width," ")
+                  $sb.AppendLine("| $($col0) | $($col1) |") | Out-Null
+              }
+
+              $sb.AppendLine("+$(''.PadRight($col0Width+2, '-'))+$(''.PadRight($col1Width+2, '-'))+") | Out-Null
+              $sb.AppendLine("") | Out-Null
+
+              return $sb.ToString()
+          }
+
+          return ""
+        }
+
+        gci $(DocsSourcesDirectory) *.md -recurse | ForEach { (Get-Content $_ | ForEach {$_ -replace ':::WI(\d+)', { Write-WITable $_.captures.groups[1].Value }}) | Set-Content $_ }
+        
+        $date = (get-date).ToString("dd.MM.yyyy")
+        (get-content $(DocsSourcesDirectory)/$(DocProperties)) -replace 'date: "[\d\.]*"',"date: ""$($date)""" -replace 'footer-center: ".*"',"footer-center: ""$(Build.BuildNumber)""" | set-content $(DocsSourcesDirectory)/$(DocProperties)
+        
+        Set-Location -Path $(DocsSourcesDirectory)
+        $inputFiles = (Get-ChildItem -Filter *.md -Recurse | Resolve-Path -Relative | Where-Object { $_ -NotMatch "__template__*" } | Where-Object {$_ -NotMatch "README.md"}) -Replace '\\', '/'
+        docker run --rm -v "$($PWD):/data" -w /data 4tecture/docsgenerator:$(DocsGeneratorVersion) -f markdown+rebase_relative_paths --template $(DocsTemplate) -t latex -o $(OutputFile) --metadata-file=$(DocProperties) --number-sections --toc  --filter pandoc-latex-environment $inputfiles
+        Copy-Item $(OutputFile) $(Build.ArtifactStagingDirectory)/$(OutputFile)
+      displayName: 'Generate documentation'
+      env:
+        AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'Docs'
+      displayName: 'Publish document'
+        

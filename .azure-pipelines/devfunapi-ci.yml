@@ -1,0 +1,270 @@
+name : DevFunApi-CI
+trigger:
+  branches:
+    include:
+    - master
+    - releases/*
+  paths:
+    include:
+    - DevFun.Api/*
+
+variables:
+- group: GlobalSecrets
+- template: templates/common_variables.yml
+- template: templates/common_variables-container.yml
+- name: DockerRepositoryName
+  value: 'devfunapi'
+- name: DockerRepositoryNameDbMigration
+  value: 'devfunapidbmigrationcli'
+- name: containerdbname
+  value: 'devfunapi'
+- name: containerdbuser
+  value: 'sa'
+- name: containerdbpassword
+  value: 'verysecure!123'
+- name: containerdbserver
+  value: 'sql'
+- name: DacpacFile
+  value: '$(Pipeline.Workspace)/dacpacs/DevFun.DB.Build.dacpac'
+
+resources:
+  containers:
+  - container: sql2022
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    env:
+      SA_PASSWORD: "$(containerdbpassword)"
+      ACCEPT_EULA: "Y"
+  - container: sql2019
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    env:
+      SA_PASSWORD: "$(containerdbpassword)"
+      ACCEPT_EULA: "Y"
+  # - container: sql2017
+  #   image: mcr.microsoft.com/mssql/server:2017-latest
+  #   env:
+  #     SA_PASSWORD: "$(containerdbpassword)"
+  #     ACCEPT_EULA: "Y"
+  - container: api
+    image: '$(AzureContainerRegistry)/$(DockerRepositoryName):$(Build.BuildNumber)'
+    endpoint: 4taksDemoAcr
+    env: 
+      DEVFUNOPTIONS__DEPLOYMENTENVIRONMENT: "Development"
+      CONNECTIONSTRINGS__DEVFUNDATABASE: 'Server=tcp:$(containerdbserver),1433;Database=$(containerdbname);User ID=$(containerdbuser);Password=$(containerdbpassword);TrustServerCertificate=True;'
+      LICENSE__LICENSEDATA: "$(LicenseData)"
+  - container: worker
+    image: 4taksdemoacr.azurecr.io/linuxworker:latest
+    endpoint: 4taksDemoAcr
+
+stages:
+- stage: Build
+  jobs:
+  - job: CI_Build
+    displayName: 'Build the Api'
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    variables:
+      DockerFile: DevFun.Api/DevFun.Api/Dockerfile
+      DockerFileDbMigrationCli: DevFun.Api/DevFun.DbMigration.Cli/Dockerfile
+      BuildContext: DevFun.Api
+      ChartPath: DevFun.Api/DevFun.Api/charts/devfunapi
+      ArtifactSourceFolder: DevFun.Api/DevFun.Api
+      ArtifactName: DevFunApi
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        useGlobalJson: true
+    - template: templates/general_BuildVersioning.yml
+    - template: templates/docker_BuildAndPublishImage.yml
+      parameters:
+        buildContext: $(BuildContext)
+        azureContainerRegistryServiceConnection: $(AzureContainerRegistryServiceConnection)
+        dockerRepositoryName: $(DockerRepositoryName)
+        dockerFile: $(DockerFile)
+        dockerArguments: '--build-arg BUILDID=$(Build.BuildId) --build-arg IMAGE_NET_ASPNET_VERSION=$(NetCoreAspNetVersion) --build-arg IMAGE_NET_SDK_VERSION=$(NetCoreSdkVersion)'
+        patProductsFeed: $(PatProductsFeed)
+        patDemoFeed: $(PatDemoFeed)
+        buildId: $(Build.BuildId)
+        buildNumber: $(Build.BuildNumber)
+        defaultWorkingDirectory: $(System.DefaultWorkingDirectory)
+        extractAndPublishDacpac: true
+        extractAndPublishClient: true
+        extractAndPublishTestResults: true
+        netCoreAspNetVersion: $(NetCoreAspNetVersion)
+        netCoreSdkVersion: $(NetCoreSdkVersion)
+    - template: templates/docker_BuildAndPublishImage.yml
+      parameters:
+        buildContext: $(BuildContext)
+        azureContainerRegistryServiceConnection: $(AzureContainerRegistryServiceConnection)
+        dockerRepositoryName: $(DockerRepositoryNameDbMigration)
+        dockerFile: $(DockerFileDbMigrationCli)
+        dockerArguments: '--build-arg BUILDID=$(Build.BuildId) --build-arg IMAGE_NET_ASPNET_VERSION=$(NetCoreAspNetVersion) --build-arg IMAGE_NET_SDK_VERSION=$(NetCoreSdkVersion)'
+        patProductsFeed: $(PatProductsFeed)
+        patDemoFeed: $(PatDemoFeed)
+        buildId: $(Build.BuildId)
+        buildNumber: $(Build.BuildNumber)
+        defaultWorkingDirectory: $(System.DefaultWorkingDirectory)
+        extractAndPublishDacpac: false
+        extractAndPublishClient: false
+        extractAndPublishTestResults: false
+        netCoreAspNetVersion: $(NetCoreAspNetVersion)
+        netCoreSdkVersion: $(NetCoreSdkVersion)
+    - template: templates/k8s_CreateHelmPackage.yml
+      parameters:
+        helmVersion: $(HelmVersion)
+        artifactStagingDirectory: $(Build.ArtifactStagingDirectory)
+        sourceFolder: $(ArtifactSourceFolder)
+        artifactName: $(ArtifactName)
+        chartPath: $(ChartPath)
+
+  - job: DataInitializer_Build
+    displayName: 'Build the Test Data Initializer'
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: mcr.microsoft.com/dotnet/sdk:$(NetCoreSdkVersion)
+    variables:
+      PublishRuntime: linux-x64
+      PublishFolder: linux
+      IsCIBuild: true
+    steps:
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: 'sed -i "s|</configuration>|<packageSourceCredentials><Products><add key=\"Username\" value=\"PATProducts\" /><add key=\"ClearTextPassword\" value=\"$(PatProductsFeed)\" /></Products><DemoFeed><add key=\"Username\" value=\"PATProducts\" /><add key=\"ClearTextPassword\" value=\"$(PatDemoFeed)\" /></DemoFeed></packageSourceCredentials></configuration>|" nuget.config' # Required when targetType == inline
+      displayName: 'Set the feed PATs temporarily for the build'
+    - task: DotNetCoreCLI@2
+      displayName: 'prepare swagger file'
+      inputs:
+        command: 'build'
+        projects: 'DevFun.Api/DevFun.Api/DevFun.Api.csproj'
+        arguments: '--configuration release'
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet publish Linux'
+      inputs:
+        command: publish
+        publishWebProjects: false
+        projects: DevFun.Api/DevFun.DataInitializer/DevFun.DataInitializer.csproj
+        arguments: '--output $(Build.ArtifactStagingDirectory)/linux --self-contained --configuration release --runtime linux-x64'
+        zipAfterPublish: false
+        modifyOutputPath: false
+    - task: DotNetCoreCLI@2
+      displayName: 'dotnet publish Windows'
+      inputs:
+        command: publish
+        publishWebProjects: false
+        projects: DevFun.Api/DevFun.DataInitializer/DevFun.DataInitializer.csproj
+        arguments: '--output $(Build.ArtifactStagingDirectory)/windows --self-contained --configuration release --runtime win-x64'
+        zipAfterPublish: false
+        modifyOutputPath: false
+    - publish: $(Build.ArtifactStagingDirectory)
+      artifact: TestDataInitializer
+      displayName: 'Publish Artifact: TestDataInitializer'
+  
+  - job: SystemTest_Build
+    displayName: 'Build the System Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: mcr.microsoft.com/dotnet/sdk:$(NetCoreSdkVersion)
+    variables:
+      buildConfiguration: release
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        useGlobalJson: true
+    - template: templates/general_BuildVersioning.yml
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: 'sed -i "s|</configuration>|<packageSourceCredentials><Products><add key=\"Username\" value=\"PATProducts\" /><add key=\"ClearTextPassword\" value=\"$(PatProductsFeed)\" /></Products><DemoFeed><add key=\"Username\" value=\"PATProducts\" /><add key=\"ClearTextPassword\" value=\"$(PatDemoFeed)\" /></DemoFeed></packageSourceCredentials></configuration>|" nuget.config' # Required when targetType == inline
+      displayName: 'Set the feed PATs temporarily for the build'
+    - template: templates/build_BuildAndPublishSystemTests.yml
+      parameters:
+        systemTestProject: DevFun.Api/DevFun.Api.System.Tests/DevFun.Api.System.Tests.csproj
+        testArtifactsCopyRoot: DevFun.Api/DevFun.Api.System.Tests
+        buildConfiguration: $(buildConfiguration)
+
+- stage: IntegrationTests
+  displayName: 'Run Integration Tests'
+  dependsOn: Build
+  jobs:
+  - job: SystemTest
+    displayName: 'System tests with SQL Server'
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    strategy:
+      matrix:
+      #  sql2017:
+      #   containerResource: sql2017
+       sql2019:
+        containerResource: sql2019
+       sql2022:
+        containerResource: sql2022
+    services:
+      sql: $[ variables['containerResource'] ]
+      api: api
+    container: worker
+    steps:
+      - download: current
+        artifact: SystemTests
+        displayName: Download the SystemTests artifact
+      - download: current
+        artifact: TestDataInitializer
+        displayName: Download the TestDataInitializer artifact
+      - download: current
+        artifact: dacpacs
+        displayName: Download the Database artifact
+      - template: templates/sql_DeployDacPac.yml
+        parameters:
+          dbServernameFqdn: sql
+          dbName: $(containerdbname)
+          dbUser: $(containerdbuser)
+          dbPassword: $(containerdbpassword)
+          dacpacFile: $(DacpacFile)
+          trustServerCertificate: true
+      - template: templates/test_runapitests.yml
+        parameters:
+          SystemTestArtifactLocation: $(Pipeline.Workspace)/SystemTests
+          DatainitializerArtifactLocation: $(Pipeline.Workspace)/TestDataInitializer
+          ApiUrl: http://api:8080
+          RunSettingsFileName: container.runsettings
+
+- stage: PullRequest
+  displayName: 'Update Pull Request'
+  dependsOn: IntegrationTests
+  condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+  pool:
+    vmImage: 'ubuntu-latest'
+    #name: Default
+    #name: LocalAgents
+  jobs:
+  - job: UpdatePullRequest
+    displayName: 'Update the pull request with policies'
+    steps:
+    - checkout: none
+    - task: PullRequestStatus@0
+      displayName: 'Initialize status'
+      inputs:
+        name: 'deploy-devfunapi'
+        action: 'Create'
+        state: 'pending'
+        description: 'Deploy DevFun API'
+
+- stage: TagReleaseVersion
+  displayName: 'Tag the release version'
+  dependsOn: IntegrationTests
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+  pool:
+    vmImage: 'ubuntu-latest'
+    #name: Default
+    #name: LocalAgents
+  jobs:
+  - job: TagReleaseVersionJob
+    displayName: 'Tag the release version'
+    steps:
+    - template: templates/general_GitTag.yml
+          

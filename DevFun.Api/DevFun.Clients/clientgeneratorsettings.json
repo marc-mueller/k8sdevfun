@@ -1,0 +1,16 @@
+{
+    "Settings": [
+        {
+            "TargetLanguage": "CSharp",
+            "SwaggerDocPath": "./swagger/devfun_v1.0.json",
+            "TargetFilePath": "V1_0/DevFunServiceClient.cs",
+            "ClientBaseInterface": "",
+            "ClassName": "DevFunServiceClient",
+            "Namespace": "DevFun.Clients",
+            "ClientBaseClass": null,
+            "GenerateResponseClasses": false,
+            "ResponseClass": null,
+            "DtoTypeNamespacesUsages": [ "ReaFx.ApiClients.Common.Dtos", "ReaFx.Services.AuditTrail.Common.Dtos.V1_0", "ReaFx.Services.LabelManagement.Common.Dtos.V1_0", "ReaFx.Services.ViewDefinitionManagement.Common.Dtos.V1_0", "DevFun.Common.Model.Dtos", "DevFun.Common.Model.Dtos.V1_0" ]
+        }
+    ]
+}

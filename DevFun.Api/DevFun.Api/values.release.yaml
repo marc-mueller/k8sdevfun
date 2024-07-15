@@ -1,0 +1,41 @@
+replicaCount: __ReplicaCount__
+image:
+  repository: __ImageName__
+  tag: __Build.BuildNumber__
+  dbdeployclirepository: __ImageNameDbMigration__
+
+ingress:
+  hosts:
+    - __IngressHostName__
+  tls:
+    - secretName: __TlsSecretName__
+      hosts:
+        - __IngressHostName__
+
+envvariables:
+  applicationinsights__instrumentationkey: __InstrumentationKey__
+  baseservicesettings__deploymentenvironment: __DeploymentEnvironment__
+
+secrets:
+  connectionstring:
+    connectionstrings__devfundatabase: "__ConnectionString__"
+  license:
+    license__licensedata: "__LicenseData__"
+  
+explicitCertIssuer: __CertIssuer__
+
+workloadIdentity:
+  enabled: true
+  provider: "Azure"
+  azure:
+    clientId: "__AzureIdentity.ClientId__"
+    name: __AzureIdentity.Name__
+    tenantId: ""  # Optional: Provide if needed
+
+deployworkloadIdentity:
+  enabled: true
+  provider: "Azure"  # Options: "Azure", "AWS", "GCP"
+  azure:
+    clientId: "__DbDeployAzureIdentity.ClientId__"
+    name: __DbDeployAzureIdentity.Name__
+    tenantId: ""  # Optional: Provide if needed

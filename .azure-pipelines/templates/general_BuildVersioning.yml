@@ -1,0 +1,58 @@
+parameters:
+- name: runOnHost
+  type: boolean
+  default: false
+
+steps:
+- task: UseDotNet@2
+  ${{ if eq(parameters.runOnHost, true) }}:   
+    target: host
+  inputs:
+    packageType: 'sdk'
+    useGlobalJson: true
+
+- pwsh: |
+    New-Item -ItemType Directory -Path "$(Agent.TempDirectory)/default-nuget"    
+    cd $(Agent.TempDirectory)/default-nuget
+    dotnet new nugetconfig
+  displayName: Create default nuget config
+- task: BuildVersioning@0
+  displayName: 'Build Versioning'
+  inputs:
+    versionSource: 'gitversion'
+    doInstallGitVersion: true
+    GitVersionToolInstallation: 'local'
+    GitVersionCustomNugetConfig: '$(Agent.TempDirectory)/default-nuget/nuget.config'
+    doUseLatestGitVersionInstallerVersion: true
+    paramAssemblyVersion: '7'
+    paramAssemblyFileVersion: '7'
+    paramAssemblyInformationalVersion: '6'
+    paramOverwriteFourthDigitWithBuildCounter: false
+    paramVersionCode: '2'
+    doAssemblyInfoAppendSuffix: false
+    doConvertAssemblyInfoToLowerCase: true
+    buildNumberVersionFormat: '3'
+    buildNumberAction: 'replace'
+    doReplaceAssemblyInfo: false
+    doReplaceNuspec: false
+    doReplaceNpm: true
+    filePatternNpm: '**\package.json'
+    paramNpmVersionType: '2'
+    doReplaceDotNetCore: true
+    filePatternDotNetCore: |
+      **\*.csproj
+      **\*.props
+      **\*.targets
+    paramDotNetCoreVersionType: '3'
+    doReplaceAndroid: false
+    doReplaceiOS: false
+    doReplaceCustom: true
+    filePatternCustom: '**\*.targets'
+    paramCustomSearchRegex: '(\d+\.\d+\.\d+(?:\.\d+)?)'
+    paramCustomReplaceRegex: '$(BuildVersion.VersionInfo)'
+    doShowWarningsForUnmatchedRegex: false
+    excludeFilePattern: |
+      !**/bin/**
+      !**/obj/**
+      !**/node_modules/**
+      !**/packages/**

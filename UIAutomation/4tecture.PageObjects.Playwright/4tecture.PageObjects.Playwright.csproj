@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>_4tecture.PageObjects.Playwright</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" Version="1.44.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\4tecture.PageObjects.Common\4tecture.PageObjects.Common.csproj" />
+  </ItemGroup>
+
+</Project>

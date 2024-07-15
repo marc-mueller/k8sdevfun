@@ -1,0 +1,13 @@
+variables:
+- name: ManagedIdentityResourceGroup
+  value: 'rg-dev-aks-nodes-k8sdemo-westeurope'
+- name: ManagedIdentityResourceGroupLocation
+  value: 'westeurope'
+- name: dbresourcegroup
+  value: 'aksDemo'
+- name: dbservername
+  value: 'dev-sql-4tdbdemoserver'
+- name: ReplicaCount
+  value: 2
+- name: KubernetesClusterOidcIssuer
+  value: https://westeurope.oic.prod-aks.azure.com/eae84aff-29e1-48bc-8daa-57ecbca66884/725bc8dd-3dbc-414a-818e-b791ad1a060d/

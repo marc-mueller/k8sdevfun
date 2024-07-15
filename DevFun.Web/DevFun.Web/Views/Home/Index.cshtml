@@ -1,0 +1,31 @@
+﻿@model DevFun.Common.Model.Dtos.V1_0.DevJokeDto
+<div class="row" style="margin-bottom:50px">
+    <div class="col-md-10">
+        <h2>DevFun</h2>
+    </div>
+    @if ((bool)ViewData["FlagEnableAlternateUrl"])
+    {
+        <div class="col-md-2">
+            <h4 style="color:red"> Enable Feature Flag</h4>
+
+            @if ((bool)ViewData["UseAlternateUrl"])
+            {
+                <a id="deactivatealternateurl" href="@Url.Action("Index", new { useAlternateUrl = false } )">Use original Url</a>
+
+            }
+            else
+            {
+                <a id="activatealternateurl" href="@Url.Action("Index", new { useAlternateUrl = true } )">Use alternate Url</a>
+            }
+        </div>
+    }
+</div>
+<div class="row" style="font-size:20pt;background-color:lightgray">
+    <div class="col-md-4">
+        <label>Random Joke:</label><br />
+        <small>Category: @Model?.CategoryName</small>
+    </div>
+    <div class="col-md-8">
+        <span id="jokeText">@Html.Raw(Model?.Text?.Replace("\\r\\n", "<br />"))</span>
+    </div>
+</div>

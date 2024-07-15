@@ -1,0 +1,6 @@
+SourceType: DevFun.Common.Entities.DevJoke
+DestinationType: DevFun.Common.Entities.DevJoke
+---
+SourceType: DevFun.Common.Entities.Category
+DestinationType: DevFun.Common.Entities.Category
+---

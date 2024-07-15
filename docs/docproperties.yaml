@@ -1,0 +1,40 @@
+title: "DevFun Product Documentation"
+author: [Marc Müller]
+date: "07.12.2021"
+keywords: [4tecture, Demos]
+titlepage: true
+toc-own-page: true
+header-left: "\\hspace{1cm}"
+header-center: "\\hspace{1cm}"
+header-right: "\\hspace{1cm}"
+footer-left: "\\thetitle"
+footer-center: "\\hspace{1cm}"
+footer-right: "Page \\thepage"
+titlepage-text-color: "0041c8"
+titlepage-rule-color: "0041c8"
+titlepage-rule-height: 2
+page-background: "/templates/pagebackground.pdf"
+page-background-opacity: 1
+colorlinks: true
+header-includes:
+- |
+  ```{=latex}
+  \usepackage{awesomebox}
+  ```
+- |
+  ```{=latex}
+  \usepackage{sectsty}
+  \sectionfont{\clearpage}
+  %\subsectionfont{\clearpage}
+  ```
+- |
+  ```{=latex}
+  \setlength\LTleft\parindent
+  \setlength\LTright\fill
+  ```
+pandoc-latex-environment:
+  noteblock: [note]
+  tipblock: [tip]
+  warningblock: [warning]
+  cautionblock: [caution]
+  importantblock: [important]

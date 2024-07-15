@@ -1,0 +1,11 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\UIAutomation\4tecture.PageObjects.Common\4tecture.PageObjects.Common.csproj" />
+  </ItemGroup>
+
+</Project>

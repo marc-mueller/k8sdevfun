@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "DevFun.DbMigration.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "deploy --server 4tdbdemoserver.database.windows.net --database devfun-pr230 --dacpacfile DevFun.DB.Build.dacpac"
+    },
+    "Docker (1)": {
+      "commandName": "Docker"
+    }
+  }
+}

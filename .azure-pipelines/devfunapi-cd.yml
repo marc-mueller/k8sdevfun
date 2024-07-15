@@ -1,0 +1,364 @@
+name : DevFunApi-CD
+trigger: none
+resources:
+  pipelines:
+  - pipeline: CIBuild
+    source: DevFunApi-CI
+    trigger:
+      branches:
+        include:
+        - master
+        - feature/*
+        - pull/*
+        - refs/pull/*
+  containers:
+  - container: worker
+    image: 4taksdemoacr.azurecr.io/linuxworker:latest
+    endpoint: 4taksDemoAcr
+
+variables:
+- group: GlobalSecrets
+- template: templates/common_variables.yml
+- template: templates/common_variables-cd.yml
+- name: dbservernamefqdn
+  value: '$(dbservername).database.windows.net'
+- name: dbuser
+  value: 'dbadmin'
+- name: ElasticPoolName
+  value: 'dev-sql-4tdbdemoserver-pool'
+- name: HelmReleaseName
+  value: 'devfunapi-$(k8sNamespace)'
+- name: ImageName
+  value: '$(AzureContainerRegistry)/devfunapi'
+- name: ImageNameDbMigration
+  value: '$(AzureContainerRegistry)/devfunapidbmigrationcli'
+- name: IngressHostName
+  value: 'api.devfun.$(k8sNamespace).aksdemo.4tecture.ch'
+- name: TlsSecretName
+  value: 'devfunapi-tls'
+- name: ConnectionString
+  value: 'Server=tcp:$(dbservernamefqdn),1433;Database=$(dbname);'
+- name: ReleaseValuesFile
+  value: '$(Pipeline.Workspace)/CIBuild/DevFunApi/values.release.yaml'
+- name: ChartPackage
+  value: '$(Pipeline.Workspace)/CIBuild/DevFunApi/devfunapi-$(RESOURCES.PIPELINE.CIBUILD.RUNNAME).tgz'
+- name: DacpacFile
+  value: '$(Pipeline.Workspace)/CIBuild/dacpacs/DevFun.DB.Build.dacpac'
+- name: ReleaseRevision
+  value: $[counter(variables['RESOURCES.PIPELINE.CIBUILD.RUNNAME'], 1)]
+
+stages:
+- stage: InitializeRelease
+  jobs:
+  - job: InitializeRelease
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    steps:
+      - checkout: none
+      - template: templates/general_ReleaseInitialization.yml
+    
+- stage: Staging
+  dependsOn: InitializeRelease
+  condition: and(succeeded('InitializeRelease'), startsWith(variables['RESOURCES.PIPELINE.CIBUILD.SOURCEBRANCH'], 'refs/heads/master'))
+  variables:
+    k8sNamespace: 'staging'
+    dbname: 'devfun-staging'
+    managedIdentity: 'devfunapi-staging'
+    deploymentManagedIdentity: 'devfunapi-deployment-staging'
+    CertIssuer: 'letsencrypt-cluster'
+    DeploymentEnvironment: 'Staging'
+    ConnectionString: 'Server=tcp:$(dbservernamefqdn),1433;Database=$(dbname);'
+  jobs:
+  - deployment: Staging
+    displayName: 'Deploy DevFun API to the staging environment'
+    environment: devfun-api-staging
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: worker
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: CIBuild
+            displayName: 'Download artifacts'
+          - template:  templates/az_CreateManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ManagedIdentity: '$(managedIdentity)'
+              ManagedIdentityResourceGroup: '$(ManagedIdentityResourceGroup)'
+              ManagedIdentityResourceGroupLocation: '$(ManagedIdentityResourceGroupLocation)'
+              AksClusterName: $(KubernetesCluster)
+              AksResourceGroup: $(AzureResourceGroup)
+              WorkloadIdentityNamespace: $(k8sNamespace)
+              WorkloadIdentityServiceName: 'devfunapi-service-account'
+          - template:  templates/az_CreateManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ManagedIdentity: '$(deploymentManagedIdentity)'
+              ManagedIdentityResourceGroup: '$(ManagedIdentityResourceGroup)'
+              ManagedIdentityResourceGroupLocation: '$(ManagedIdentityResourceGroupLocation)'
+              VariablePrefix: 'DbDeployAzureIdentity'
+              AksClusterName: $(KubernetesCluster)
+              AksResourceGroup: $(AzureResourceGroup)
+              WorkloadIdentityNamespace: $(k8sNamespace)
+              WorkloadIdentityServiceName: 'devfunapi-deploy-service-account'
+          - template: templates/sql_CreateAzureSqlDatabaseManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ResourceGroup: '$(AzureResourceGroup)'
+              ElasticPoolName: '$(ElasticPoolName)'
+              AzureSqlName: '$(dbservername)'
+              ManagedIdentity: '$(managedIdentity)'
+              DeploymentManagedidentity: '$(deploymentManagedIdentity)'
+              DbName: '$(dbname)' 
+              SetupBackup: false
+              BackupWeeklyPeriod: 0
+              BackupMonthlyPeriod: 0
+          # - template: templates/sql_DeployDacPac.yml
+          #   parameters:
+          #     dbServernameFqdn: $(dbservernamefqdn)
+          #     dbName: $(dbname)
+          #     dbUser: $(dbuser)
+          #     dbPassword: $(dbpassword)
+          #     dacpacFile: $(DacpacFile)
+          - template: templates/k8s_DeployHelmPackage.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              chartPath: '$(ChartPackage)'
+              releaseName: '$(HelmReleaseName)'
+              buildId: '$(RESOURCES.PIPELINE.CIBUILD.RUNNAME)'
+              releaseValuesFile: '$(ReleaseValuesFile)'
+
+- stage: Prod
+  dependsOn: Staging
+  condition: succeeded('Staging')
+  variables:
+    k8sNamespace: 'prod'
+    dbname: 'devfun-prod'
+    managedIdentity: 'devfunapi-prod'
+    deploymentManagedIdentity: 'devfunapi-deployment-prod'
+    CertIssuer: 'letsencrypt-cluster'
+    DeploymentEnvironment: 'Production'
+    ConnectionString: 'Server=tcp:$(dbservernamefqdn),1433;Database=$(dbname);'
+  jobs:
+  - deployment: Prod
+    displayName: 'Deploy DevFun API to the prod environment'
+    environment: devfun-api-prod
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: worker
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: CIBuild
+            displayName: 'Download artifacts'
+          - template:  templates/az_CreateManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ManagedIdentity: '$(managedIdentity)'
+              ManagedIdentityResourceGroup: '$(ManagedIdentityResourceGroup)'
+              ManagedIdentityResourceGroupLocation: '$(ManagedIdentityResourceGroupLocation)'
+              AksClusterName: $(KubernetesCluster)
+              AksResourceGroup: $(AzureResourceGroup)
+              WorkloadIdentityNamespace: $(k8sNamespace)
+              WorkloadIdentityServiceName: 'devfunapi-service-account'
+          - template:  templates/az_CreateManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ManagedIdentity: '$(deploymentManagedIdentity)'
+              ManagedIdentityResourceGroup: '$(ManagedIdentityResourceGroup)'
+              ManagedIdentityResourceGroupLocation: '$(ManagedIdentityResourceGroupLocation)'
+              VariablePrefix: 'DbDeployAzureIdentity'
+              AksClusterName: $(KubernetesCluster)
+              AksResourceGroup: $(AzureResourceGroup)
+              WorkloadIdentityNamespace: $(k8sNamespace)
+              WorkloadIdentityServiceName: 'devfunapi-deploy-service-account'
+          - template: templates/sql_CreateAzureSqlDatabaseManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ResourceGroup: '$(AzureResourceGroup)'
+              ElasticPoolName: '$(ElasticPoolName)'
+              AzureSqlName: '$(dbservername)'
+              ManagedIdentity: '$(managedIdentity)'
+              DeploymentManagedidentity: '$(deploymentManagedIdentity)'
+              DbName: '$(dbname)' 
+              SetupBackup: false
+              BackupWeeklyPeriod: 0
+              BackupMonthlyPeriod: 0
+          # - template: templates/sql_DeployDacPac.yml
+          #   parameters:
+          #     dbServernameFqdn: $(dbservernamefqdn)
+          #     dbName: $(dbname)
+          #     dbUser: $(dbuser)
+          #     dbPassword: $(dbpassword)
+          #     dacpacFile: $(DacpacFile)
+          - template: templates/k8s_DeployHelmPackage.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              chartPath: '$(ChartPackage)'
+              releaseName: '$(HelmReleaseName)'
+              buildId: '$(RESOURCES.PIPELINE.CIBUILD.RUNNAME)'
+              releaseValuesFile: '$(ReleaseValuesFile)'
+
+- stage: PullRequest
+  dependsOn: InitializeRelease
+  condition: and(succeeded('InitializeRelease'), startsWith(variables['RESOURCES.PIPELINE.CIBUILD.SOURCEBRANCH'], 'refs/pull/')) 
+  variables:
+    k8sNamespace: 'dev'
+    dbname: 'dynamic'
+    CertIssuer: 'letsencrypt-cluster-staging'
+    DeploymentEnvironment: 'PR Build'
+  jobs:
+  - deployment: PullRequestDeployment
+    displayName: 'Deploy DevFun API to the PR environment'
+    environment: devfun-api-pr
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: worker
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: CIBuild
+            displayName: 'Download artifacts'
+          - template: templates/pr_DefineApiPrVariables.yml
+          - template: templates/pr_SetupK8sPrEnvironment.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              releaseName: '$(HelmReleaseName)'
+              kubectlVersion: $(KubectlVersion)
+              azureContainerRegistry: $(AzureContainerRegistry)
+          - template:  templates/az_CreateManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ManagedIdentity: '$(managedIdentity)'
+              ManagedIdentityResourceGroup: '$(ManagedIdentityResourceGroup)'
+              ManagedIdentityResourceGroupLocation: '$(ManagedIdentityResourceGroupLocation)'
+              AksClusterName: $(KubernetesCluster)
+              AksResourceGroup: $(AzureResourceGroup)
+              WorkloadIdentityNamespace: $(k8sNamespace)
+              WorkloadIdentityServiceName: 'devfunapi-service-account'
+          - template:  templates/az_CreateManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ManagedIdentity: '$(deploymentManagedIdentity)'
+              ManagedIdentityResourceGroup: '$(ManagedIdentityResourceGroup)'
+              ManagedIdentityResourceGroupLocation: '$(ManagedIdentityResourceGroupLocation)'
+              VariablePrefix: 'DbDeployAzureIdentity'
+              AksClusterName: $(KubernetesCluster)
+              AksResourceGroup: $(AzureResourceGroup)
+              WorkloadIdentityNamespace: $(k8sNamespace)
+              WorkloadIdentityServiceName: 'devfunapi-deploy-service-account'
+          - template: templates/sql_CreateAzureSqlDatabaseManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ResourceGroup: '$(AzureResourceGroup)'
+              ElasticPoolName: '$(ElasticPoolName)'
+              AzureSqlName: '$(dbservername)'
+              ManagedIdentity: '$(managedIdentity)'
+              DeploymentManagedidentity: '$(deploymentManagedIdentity)'
+              DbName: '$(dbname)' 
+              SetupBackup: false
+              BackupWeeklyPeriod: 0
+              BackupMonthlyPeriod: 0
+          # - template: templates/sql_DeployDacPac.yml
+          #   parameters:
+          #     dbServernameFqdn: $(dbservernamefqdn)
+          #     dbName: $(dbname)
+          #     dbUser: $(dbuser)
+          #     dbPassword: $(dbpassword)
+          #     dacpacFile: $(DacpacFile)
+          - template: templates/k8s_DeployHelmPackage.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              chartPath: '$(ChartPackage)'
+              releaseName: '$(HelmReleaseName)'
+              buildId: '$(RESOURCES.PIPELINE.CIBUILD.RUNNAME)'
+              releaseValuesFile: '$(ReleaseValuesFile)'
+              pullRequestId: $(prId)
+          - task: Bash@3
+            inputs:
+              targetType: 'inline'
+              script: |
+                chmod +x $(Pipeline.Workspace)/CIBuild/TestDataInitializer/linux/DevFun.DataInitializer
+                $(Pipeline.Workspace)/CIBuild/TestDataInitializer/linux/DevFun.DataInitializer --service https://$(IngressHostName)
+            displayName: 'Run DataInitializer'
+  - job: ApiTests
+    displayName: "Run API System Test"
+    dependsOn: PullRequestDeployment
+    container: mcr.microsoft.com/dotnet/sdk:$(NetCoreSdkVersion)
+    steps:
+    - checkout: none
+    - download: CIBuild
+      artifact: SystemTests
+      displayName: Download the SystemTests artifact
+    - download: CIBuild
+      artifact: TestDataInitializer
+      displayName: Download the TestDataInitializer artifact
+    - template: templates/pr_DefineApiPrVariables.yml
+    - template: templates/test_runapitests.yml
+      parameters:
+        SystemTestArtifactLocation: $(Pipeline.Workspace)/CIBuild/SystemTests
+        DatainitializerArtifactLocation: $(Pipeline.Workspace)/CIBuild/TestDataInitializer
+        ApiUrl: https://$(IngressHostName)
+        RunSettingsFileName: k8s.runsettings
+  - job: UpdatePullRequest
+    displayName: 'Update the pull request with policies'
+    dependsOn: 
+    - PullRequestDeployment
+    - ApiTests
+    condition: always()
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+      #name: LocalAgents
+    variables:
+      DeploymentResult: $[dependencies.PullRequestDeployment.result]
+      SystemTestResult: $[dependencies.ApiTests.result]
+    steps:
+    - checkout: none
+    - template: templates/pr_DefineApiPrVariables.yml
+    - template: templates/pr_UpdateStatus.yml
+      parameters:
+        Name: 'deploy-devfunapi'
+        Description: 'Deploy DevFun API'
+        DeploymentResult: $(DeploymentResult)
+        SystemTestResult: $(SystemTestResult)
+        PullRequestId: $(prId)
+
+- stage: publish_clients_internal
+  dependsOn: InitializeRelease
+  condition: and(succeeded('InitializeRelease'), not(startsWith(variables['RESOURCES.PIPELINE.CIBUILD.SOURCEBRANCH'], 'refs/pull/'))) 
+  displayName: 'DevFun Api - Publish client packages to internal feed'
+  jobs:
+  - deployment: devfunapi_publishinternal
+    displayName: 'DevFun Api - Publish client packages to internal feed'
+    environment: devfunapi-core-publish-internal
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DotNetCoreCLI@2
+            displayName: "Publish nuget packages to internal feed"
+            inputs:
+              command: 'push'
+              packagesToPush: '$(Pipeline.Workspace)/CIBuild/clients/*.$(RESOURCES.PIPELINE.CIBUILD.RUNNAME).nupkg;$(Pipeline.Workspace)/CIBuild/clients/*.$(RESOURCES.PIPELINE.CIBUILD.RUNNAME).snupkg'
+              nuGetFeedType: 'internal'
+              publishVstsFeed: 'DemoFeed'

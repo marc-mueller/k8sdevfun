@@ -1,0 +1,72 @@
+parameters:
+- name: azureSubscription
+  type: string
+  default: 
+- name: helmVersion
+  type: string
+  default: 
+- name: clusterResourceGroup
+  type: string
+  default:
+- name: clusterName
+  type: string
+  default: 
+- name: clusterNamespace
+  type: string
+  default: 
+- name: releaseName
+  type: string
+  default: 
+- name: deleteHelmRelease
+  type: boolean
+  default: false
+- name: continueOnError
+  type: boolean
+  default: false
+- name: kubectlVersion
+  type: string
+  default: 
+
+steps:
+- ${{ if eq(parameters.deleteHelmRelease, true) }}:
+  - task: HelmInstaller@0
+    displayName: 'Install Helm  ${{ parameters.helmVersion}}'
+    inputs:
+      helmVersion: ${{ parameters.helmVersion}}
+      checkLatestHelmVersion: false
+      installKubectl: true
+    ${{ if eq(parameters.continueOnError, true) }}:
+      continueOnError: true
+
+  - task: HelmDeploy@0
+    displayName: 'helm delete realease'
+    inputs:
+      connectionType: 'Azure Resource Manager'
+      azureSubscription: '${{ parameters.azureSubscription }}'
+      azureResourceGroup: ${{ parameters.clusterResourceGroup }}
+      kubernetesCluster: ${{ parameters.clusterName}}
+      useClusterAdmin: true
+      namespace: ${{ parameters.clusterNamespace}}
+      command: 'uninstall'
+      arguments: ${{ parameters.releaseName}}
+    ${{ if eq(parameters.continueOnError, true) }}:
+      continueOnError: true
+    
+- task: KubectlInstaller@0
+  inputs:
+    kubectlVersion: '$(kubectlVersion)'    
+
+- task: Kubernetes@1
+  displayName: 'kubectl delete namespace'
+  inputs:
+    connectionType: 'Azure Resource Manager'
+    azureSubscriptionEndpoint: '${{ parameters.azureSubscription }}'
+    azureResourceGroup: ${{ parameters.clusterResourceGroup }}
+    kubernetesCluster: ${{ parameters.clusterName}}
+    useClusterAdmin: true
+    command: 'delete'
+    arguments: 'namespaces ${{ parameters.clusterNamespace}}'
+    secretType: 'dockerRegistry'
+    containerRegistryType: 'Azure Container Registry'
+  ${{ if eq(parameters.continueOnError, true) }}:
+      continueOnError: true

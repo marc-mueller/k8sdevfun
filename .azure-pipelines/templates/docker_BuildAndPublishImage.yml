@@ -1,0 +1,222 @@
+parameters:
+- name: buildContext
+  type: string
+  default: 
+- name: configurationContext
+  type: string
+  default: $(Build.SourcesDirectory)
+- name: azureContainerRegistryServiceConnection
+  type: string
+  default: 
+- name: dockerRepositoryName
+  type: string
+  default:
+- name: dockerFile
+  type: string
+  default: 
+- name: dockerArguments
+  type: string
+  default:
+- name: patProductsFeed
+  type: string
+  default:
+- name: patDemoFeed
+  type: string
+  default:
+- name: buildId
+  type: string
+  default: 
+- name: buildNumber
+  type: string
+  default: 
+- name: defaultWorkingDirectory
+  type: string
+  default: 
+- name: extractAndPublishDacpac
+  type: boolean
+  default: false
+- name: dacpacArtifactName
+  type: string
+  default: 'dacpacs'
+- name: clientArtifactName
+  type: string
+  default: 'clients'
+- name: extractAndPublishClient
+  type: boolean
+  default: false
+- name: extractAndPublishTestResults
+  type: boolean
+  default: false
+- name: netCoreAspNetVersion
+  type: string
+  default: 
+- name: netCoreSdkVersion
+  type: string
+  default: 
+- name: dockerTestTarget
+  type: string
+  default: test
+- name: dockerClientTarget
+  type: string
+  default: client
+- name: dockerDacPacTarget
+  type: string
+  default: dacpac
+
+steps:
+- task: CopyFiles@2
+  displayName: "Copy props from repo root to docker context root"
+  inputs:
+    Contents: |
+      *.props
+      *.ruleset
+      nuget.config
+    TargetFolder: ${{ parameters.buildContext }}
+    SourceFolder: ${{ parameters.configurationContext }}
+
+- ${{ if ne(parameters.patProductsFeed, '') }}: # Check if feedsPAT is not empty  
+  - pwsh: |
+      $nugetConfig = Get-Content -Path "$(Build.SourcesDirectory)/nuget.config" -Raw
+      $credentialBlock = @"
+      <packageSourceCredentials>
+          <Products>
+              <add key="Username" value="PAT" />
+              <add key="ClearTextPassword" value="${{ parameters.patProductsFeed }}" />
+          </Products>
+          <DemoFeed>
+              <add key="Username" value="PAT" />
+              <add key="ClearTextPassword" value="${{ parameters.patDemoFeed }}" />
+          </DemoFeed>
+      </packageSourceCredentials>
+      "@ 
+      $nugetConfig = $nugetConfig -Replace '</configuration>', "$credentialBlock`n</configuration>"
+      $nugetConfig | Out-File -FilePath "$(Agent.TempDirectory)/nuget.config" -NoNewline -Encoding UTF8
+    displayName: 'Prepare nuget.config Secret File'
+
+- ${{ if eq(parameters.extractAndPublishTestResults, true) }}:
+  - task: Docker@2
+    displayName: 'Build Docker Image (Test Results)'
+    inputs:
+      containerRegistry: '${{ parameters.azureContainerRegistryServiceConnection }}'
+      repository: '${{ parameters.dockerRepositoryName }}-${{ parameters.dockerTestTarget }}'
+      command: 'build'
+      Dockerfile: '${{ parameters.dockerFile }}'
+      buildContext: '${{ parameters.buildContext }}'
+      tags: |
+        ${{ lower(parameters.buildNumber) }}
+        latest
+      ${{ if ne(parameters.patProductsFeed, '') }}:
+        arguments: --secret id=nugetconfig,src=$(Agent.TempDirectory)/nuget.config ${{ parameters.dockerArguments }} --target ${{ parameters.dockerTestTarget }} --progress=plain
+      ${{ if eq(parameters.patProductsFeed, '') }}:
+        arguments: ${{ parameters.dockerArguments }} --target ${{ parameters.dockerTestTarget }} --progress=plain
+
+- ${{ if eq(parameters.extractAndPublishDacpac, true) }}:  
+  - task: Docker@2
+    displayName: 'Build Docker Image (DacPac)'
+    inputs:
+      containerRegistry: '${{ parameters.azureContainerRegistryServiceConnection }}'
+      repository: '${{ parameters.dockerRepositoryName }}-${{ parameters.dockerDacPacTarget }}'
+      command: 'build'
+      Dockerfile: '${{ parameters.dockerFile }}'
+      buildContext: '${{ parameters.buildContext }}'
+      tags: |
+        ${{ lower(parameters.buildNumber) }}
+        latest
+      ${{ if ne(parameters.patProductsFeed, '') }}:
+        arguments: --secret id=nugetconfig,src=$(Agent.TempDirectory)/nuget.config ${{ parameters.dockerArguments }} --target ${{ parameters.dockerDacPacTarget }} --progress=plain
+      ${{ if eq(parameters.patProductsFeed, '') }}:
+        arguments: ${{ parameters.dockerArguments }} --target ${{ parameters.dockerDacPacTarget }} --progress=plain
+
+- ${{ if eq(parameters.extractAndPublishClient, true) }}:
+  - task: Docker@2
+    displayName: 'Build Docker Image (Client)'
+    inputs:
+      containerRegistry: '${{ parameters.azureContainerRegistryServiceConnection }}'
+      repository: '${{ parameters.dockerRepositoryName }}-${{ parameters.dockerClientTarget }}'
+      command: 'build'
+      Dockerfile: '${{ parameters.dockerFile }}'
+      buildContext: '${{ parameters.buildContext }}'
+      tags: |
+        ${{ lower(parameters.buildNumber) }}
+        latest
+      ${{ if ne(parameters.patProductsFeed, '') }}:
+        arguments: --secret id=nugetconfig,src=$(Agent.TempDirectory)/nuget.config ${{ parameters.dockerArguments }} --target ${{ parameters.dockerClientTarget }} --progress=plain
+      ${{ if eq(parameters.patProductsFeed, '') }}:
+        arguments: ${{ parameters.dockerArguments }} --target ${{ parameters.dockerClientTarget }} --progress=plain
+
+- task: Docker@2
+  displayName: 'Build Docker Image (final)'
+  inputs:
+    containerRegistry: '${{ parameters.azureContainerRegistryServiceConnection }}'
+    repository: '${{ parameters.dockerRepositoryName }}'
+    command: 'build'
+    Dockerfile: '${{ parameters.dockerFile }}'
+    buildContext: '${{ parameters.buildContext }}'
+    tags: |
+      ${{ lower(parameters.buildNumber) }}
+      latest
+    ${{ if ne(parameters.patProductsFeed, '') }}:
+      arguments: --secret id=nugetconfig,src=$(Agent.TempDirectory)/nuget.config ${{ parameters.dockerArguments }} --target final --progress=plain
+    ${{ if eq(parameters.patProductsFeed, '') }}:
+      arguments: ${{ parameters.dockerArguments }} --target final --progress=plain
+
+- ${{ if eq(parameters.extractAndPublishTestResults, true) }}:
+  - pwsh: |   
+      $id=docker images --filter "label=testresults=${{ parameters.buildId }}" -q | Select-Object -First 1
+      docker create --name testcontainer $id
+      docker cp testcontainer:/testresults ./testresults
+      docker rm testcontainer
+    displayName: 'Copy test results'
+
+  - task: PublishTestResults@2
+    displayName: 'Publish test results'
+    inputs:
+      testResultsFormat: 'VSTest'
+      testResultsFiles: '**/*.trx'
+      searchFolder: '${{ parameters.defaultWorkingDirectory }}/testresults'
+      testRunTitle: 'Unit Tests ${{ parameters.buildNumber }}'
+
+  - task: PublishCodeCoverageResults@1
+    displayName: 'Publish code coverage results'
+    inputs:
+      codeCoverageTool: 'Cobertura'
+      summaryFileLocation: '${{ parameters.defaultWorkingDirectory }}/testresults/coverage/coverage.cobertura.xml'
+      reportDirectory: '${{ parameters.defaultWorkingDirectory }}/testresults/coverage/reports'
+
+- ${{ if eq(parameters.extractAndPublishDacpac, true) }}:  
+  - pwsh: |
+      $id=docker images --filter "label=dacpac=$(Build.BuildId)" -q | Select-Object -First 1
+      docker create --name dacpaccontainer-$(Build.BuildId) $id
+      docker cp dacpaccontainer-$(Build.BuildId):/dacpacs $(Build.ArtifactStagingDirectory)/${{ parameters.dacpacArtifactName }}
+      docker rm dacpaccontainer-$(Build.BuildId)
+    displayName: 'Copy DACPACs'
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish DACPACs'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)/${{ parameters.dacpacArtifactName }}'
+      ArtifactName: '${{ parameters.dacpacArtifactName }}'
+
+- ${{ if eq(parameters.extractAndPublishClient, true) }}:
+  - pwsh: |
+      $id=docker images --filter "label=client=$(Build.BuildId)" -q | Select-Object -First 1
+      docker create --name clientcontainer-$(Build.BuildId) $id
+      docker cp clientcontainer-$(Build.BuildId):/nupkgs $(Build.ArtifactStagingDirectory)/${{ parameters.clientArtifactName }}
+      docker rm clientcontainer-$(Build.BuildId)
+    displayName: 'Copy client packages'
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish client packages'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)/${{ parameters.clientArtifactName }}'
+      ArtifactName: '${{ parameters.clientArtifactName }}'
+
+- task: Docker@2
+  displayName: 'Push the docker image to the registry'
+  inputs:
+    containerRegistry: '${{ parameters.azureContainerRegistryServiceConnection }}'
+    repository: '${{ parameters.dockerRepositoryName }}'
+    command: 'push'
+    tags: |
+      ${{ lower(parameters.buildNumber) }}
+      latest

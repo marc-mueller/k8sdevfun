@@ -1,0 +1,255 @@
+name : DevFunWeb-CD
+trigger: none
+resources:
+  pipelines:
+  - pipeline: CIBuild
+    source: DevFunWeb-CI
+    trigger:
+      branches:
+        include:
+        - master
+        - feature/*
+        - pull/*
+        - refs/pull/*
+  containers:
+  - container: worker
+    image: 4taksdemoacr.azurecr.io/linuxworker:latest
+    endpoint: 4taksDemoAcr
+  - container: seleniumChrome
+    image: selenium/node-chrome:4.22.0
+    volumes:
+    - /dev/shm:/dev/shm
+    env:
+      SE_EVENT_BUS_HOST: seleniumhub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+  - container: seleniumEdge
+    image: selenium/node-edge:4.22.0
+    volumes:
+    - /dev/shm:/dev/shm
+    env:
+      SE_EVENT_BUS_HOST: seleniumhub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+  - container: seleniumFirefox
+    image: selenium/node-firefox:4.22.0
+    volumes:
+    - /dev/shm:/dev/shm
+    env:
+      SE_EVENT_BUS_HOST: seleniumhub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+  - container: seleniumvideo
+    image: selenium/video:ffmpeg-6.1.1-20240621
+    volumes:
+      - /home/vsts/work/_temp/videos:/videos    
+    env:
+      DISPLAY_CONTAINER_NAME: selenium
+      SE_NODE_GRID_URL: http://seleniumhub:4444
+      SE_VIDEO_FILE_NAME: auto
+  - container: seleniumhub
+    image: selenium/hub:4.22.0
+    ports:
+      - "4442:4442"
+      - "4443:4443"
+      - "4444:4444"
+
+variables:
+- group: GlobalSecrets
+- template: templates/common_variables.yml
+- template: templates/common_variables-cd.yml
+- name: FlagEnableAlternateUrl
+  value: false
+- name: HelmReleaseName
+  value: 'devfunweb-$(k8sNamespace)'
+- name: ImageName
+  value: '$(AzureContainerRegistry)/devfunweb'
+- name: IngressHostName
+  value: 'web.devfun.$(k8sNamespace).aksdemo.4tecture.ch'
+- name: ServiceUrl
+  value: 'http://devfunapi'
+- name: TlsSecretName
+  value: 'devfunweb-tls'
+- name: ReleaseValuesFile
+  value: '$(Pipeline.Workspace)/CIBuild/DevFunWeb/values.release.yaml'
+- name: ChartPackage
+  value: '$(Pipeline.Workspace)/CIBuild/DevFunWeb/devfunweb-$(RESOURCES.PIPELINE.CIBUILD.RUNNAME).tgz'
+- name: ReleaseRevision
+  value: $[counter(variables['RESOURCES.PIPELINE.CIBUILD.RUNNAME'], 1)]
+
+stages:
+- stage: InitializeRelease
+  jobs:
+  - job: InitializeRelease
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    steps:
+    - checkout: none
+    - template: templates/general_ReleaseInitialization.yml
+
+- stage: Staging
+  dependsOn: InitializeRelease
+  condition: and(succeeded('InitializeRelease'), startsWith(variables['RESOURCES.PIPELINE.CIBUILD.SOURCEBRANCH'], 'refs/heads/master'))
+  variables:
+    k8sNamespace: 'staging'
+    CertIssuer: 'letsencrypt-cluster'
+    DeploymentEnvironment: 'Staging'
+  jobs:
+  - deployment: Staging
+    displayName: 'Deploy DevFun Web to the staging environment'
+    environment: devfun-web-staging
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: worker
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: CIBuild
+            artifact: DevFunWeb
+          - template: templates/k8s_DeployHelmPackage.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              chartPath: '$(ChartPackage)'
+              releaseName: '$(HelmReleaseName)'
+              buildId: '$(RESOURCES.PIPELINE.CIBUILD.RUNNAME)'
+              releaseValuesFile: '$(ReleaseValuesFile)'
+
+- stage: Prod
+  dependsOn: Staging
+  condition: succeeded('Staging')
+  variables:
+    k8sNamespace: 'prod'
+    CertIssuer: 'letsencrypt-cluster'
+    DeploymentEnvironment: 'Production'
+  jobs:
+  - deployment: Prod
+    displayName: 'Deploy DevFun Web to the prod environment'
+    environment: devfun-web-prod
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: worker
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: CIBuild
+            artifact: DevFunWeb
+          - template: templates/k8s_DeployHelmPackage.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              chartPath: '$(ChartPackage)'
+              releaseName: '$(HelmReleaseName)'
+              buildId: '$(RESOURCES.PIPELINE.CIBUILD.RUNNAME)'
+              releaseValuesFile: '$(ReleaseValuesFile)'
+
+- stage: PullRequest
+  dependsOn: InitializeRelease
+  condition: and(succeeded('InitializeRelease'), startsWith(variables['RESOURCES.PIPELINE.CIBUILD.SOURCEBRANCH'], 'refs/pull/')) 
+  variables:
+    k8sNamespace: 'dev'
+    CertIssuer: 'letsencrypt-cluster-staging'
+    DeploymentEnvironment: 'PR Build'
+    FlagEnableAlternateUrl: true
+    AlternateTestingUrl: http://devfunapi.prod
+  jobs:
+  - deployment: PullRequestDeployment
+    displayName: 'Deploy DevFun Web to the PR environment'
+    environment: devfun-web-pr
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: worker
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: CIBuild
+            artifact: DevFunWeb
+          - template: templates/pr_DefineWebPrVariables.yml
+          - template: templates/pr_SetupK8sPrEnvironment.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              releaseName: '$(HelmReleaseName)'
+              kubectlVersion: $(KubectlVersion)
+              azureContainerRegistry: $(AzureContainerRegistry)
+          - template: templates/k8s_DeployHelmPackage.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              chartPath: '$(ChartPackage)'
+              releaseName: '$(HelmReleaseName)'
+              buildId: '$(RESOURCES.PIPELINE.CIBUILD.RUNNAME)'
+              releaseValuesFile: '$(ReleaseValuesFile)'
+              pullRequestId: $(prId)
+  - job: SystemTest
+    displayName: 'System tests with Selenium UI Tests'
+    dependsOn: PullRequestDeployment
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+      #name: LocalAgents
+    strategy:
+      matrix:
+        # chrome:
+        #   containerResource: seleniumChrome
+        #   targetBrowser: Chrome
+        # edge:
+        #   containerResource: seleniumEdge
+        #   targetBrowser: Edge
+        firefox:
+          containerResource: seleniumFirefox
+          targetBrowser: Firefox
+    services:
+      seleniumhub: seleniumhub
+      selenium: $[ variables['containerResource'] ]
+      seleniumvideo: seleniumvideo
+    container: worker
+    steps:
+      - checkout: none
+      - download: CIBuild
+        artifact: SystemTests
+        displayName: Download the SystemTests artifact
+      - template: templates/pr_DefineWebPrVariables.yml
+      - template: templates/test_runseleniumtests.yml
+        parameters:
+          SystemTestArtifactLocation: $(Pipeline.Workspace)/CIBuild/SystemTests
+          RunSettingsFileName: k8s.runsettings
+          TargetBrowser: $(targetBrowser)
+  - job: UpdatePullRequest
+    displayName: 'Update the pull request with policies'
+    dependsOn: 
+    - PullRequestDeployment
+    - SystemTest
+    condition: always()
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+      #name: LocalAgents
+    variables:
+     DeploymentResult: $[dependencies.PullRequestDeployment.result]
+     SystemTestResult: $[dependencies.SystemTest.result]
+    steps:
+    - checkout: none
+    - template: templates/pr_DefineWebPrVariables.yml
+    - template: templates/pr_UpdateStatus.yml
+      parameters:
+        Name: 'deploy-devfunweb'
+        Description: 'Deploy DevFun Web'
+        DeploymentResult: $(DeploymentResult)
+        SystemTestResult: $(SystemTestResult)
+        PullRequestId: $(prId)

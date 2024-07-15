@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <!-- Parameters used by tests at runtime -->
+  <TestRunParameters>
+    <Parameter name="automationFramework" value="Selenium" />
+    <!--<Parameter name="automationFramework" value="Playwright" />-->
+    <Parameter name="baseUrl" value="http://host.docker.internal:4578/" />
+    <!--<Parameter name="baseUrl" value="http://localhost:4578/" />-->
+    <!--<Parameter name="baseUrl" value="http://devfun.web/" />-->
+    <!--<Parameter name="baseUrl" value="https://web.devfun.staging.aksdemo.4tecture.ch/" />-->
+    <!--<Parameter name="driverType" value="Local" />-->
+    <Parameter name="driverType" value="Remote" />
+    <Parameter name="remoteDriverUrl" value="http://localhost:4444/wd/hub" />
+    <!--<Parameter name="remoteDriverUrl" value="ws://localhost:5555" />-->
+    <!--<Parameter name="targetBrowser" value="Chrome" />-->
+     <!--<Parameter name="targetBrowser" value="Edge" />-->
+    <!--<Parameter name="targetBrowser" value="InternetExplorer" />-->
+    <Parameter name="targetBrowser" value="Firefox" />
+    <Parameter name="resolutionWidth" value="1280" />
+    <Parameter name="resolutionHeight" value="768" />
+  </TestRunParameters>
+</RunSettings>

@@ -1,0 +1,70 @@
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+resources:
+  # https://dev.azure.com/4tecture-demo/_apis/public/distributedtask/webhooks/prupdated?api-version=6.0-preview
+  webhooks:
+    - webhook: PRUpdated                ### Webhook alias
+      connection: PREventsConnection    ### Incoming webhook service connection
+      filters:
+      - path: eventType
+        value: git.pullrequest.updated
+      - path: publisherId
+        value: tfs
+      - path: resource.repository.name
+        value: DevFun
+
+variables:
+- template: templates/common_variables.yml
+- template: templates/common_variables-cd.yml
+
+stages:
+- stage: CleanupPr
+  jobs:
+  - deployment: CleanupPrEnvironment
+    displayName: 'Cleanup PR environment'
+    environment: devfuncleanuppr
+    condition: or(eq('${{ parameters.PRUpdated.resource.status }}', 'completed'), eq('${{ parameters.PRUpdated.resource.status }}', 'abandoned'))
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: none
+          - pwsh: |
+              $prId = "${{ parameters.PRUpdated.resource.pullRequestId }}"
+              $dbname = "devfun-pr$($prId)"
+              Write-Host "##vso[task.setvariable variable=dbname;]$dbname"
+              Write-Host "##vso[task.setvariable variable=k8sNamespace;]pr-$($prId)"
+              Write-Host "##vso[task.setvariable variable=managedIdentityApi;]devfunapi-pr-$($prId)"
+              Write-Host "##vso[task.setvariable variable=deploymentManagedIdentityApi;]devfunapi-deployment-pr-$($prId)"
+            displayName: "Calculate PR related variables"
+          - template: templates/pr_DeleteK8sPrEnvironment.yml
+            parameters:
+              azureSubscription: '$(AzureSubscription)'
+              clusterResourceGroup: '$(AzureResourceGroup)'
+              clusterName: '$(KubernetesCluster)'
+              clusterNamespace: '$(k8sNamespace)'
+              continueOnError: true
+              kubectlVersion: $(KubectlVersion)
+          - template: templates/sql_DeleteAzureSqlDatabase.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ResourceGroup: '$(AzureResourceGroup)'
+              AzureSqlName: '$(dbservername)'
+              DbName: '$(dbname)' 
+              continueOnError: true
+          - template:  templates/az_DeleteManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ManagedIdentity: '$(managedIdentityApi)'
+              ManagedIdentityResourceGroup: '$(ManagedIdentityResourceGroup)'
+              continueOnError: true
+          - template:  templates/az_DeleteManagedIdentity.yml
+            parameters:
+              AzureSubscription: '$(AzureSubscription)'
+              ManagedIdentity: '$(deploymentManagedIdentityApi)'
+              ManagedIdentityResourceGroup: '$(ManagedIdentityResourceGroup)'
+              continueOnError: true
+

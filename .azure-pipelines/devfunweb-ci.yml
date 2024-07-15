@@ -1,0 +1,210 @@
+name : DevFunWeb-CI
+trigger:
+  branches:
+    include:
+    - master
+    - releases/*
+  paths:
+    include:
+    - DevFun.Web/*
+
+parameters:
+- name: integrationTestBackendUrl
+  type: string
+  default: 'https://api.devfun.staging.demo.4tecture.ch/'
+
+
+variables:
+- group: GlobalSecrets
+- template: templates/common_variables.yml
+- name: DockerRepositoryName
+  value: 'devfunweb'
+
+resources:
+  containers:
+  - container: web
+    image: '$(AzureContainerRegistry)/$(DockerRepositoryName):$(Build.BuildNumber)'
+    endpoint: 4taksDemoAcr
+    env: 
+      devfunoptions__deploymentenvironment: "Development"
+      connectionstrings__url: "${{ parameters.integrationTestBackendUrl}}"
+  - container: worker
+    image: $(AzureContainerRegistry)/linuxworker:latest
+    endpoint: 4taksDemoAcr
+  - container: seleniumChrome
+    image: selenium/node-chrome:4.22.0
+    volumes:
+    - /dev/shm:/dev/shm
+    env:
+      SE_EVENT_BUS_HOST: seleniumhub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+  - container: seleniumEdge
+    image: selenium/node-edge:4.22.0
+    volumes:
+    - /dev/shm:/dev/shm
+    env:
+      SE_EVENT_BUS_HOST: seleniumhub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+  - container: seleniumFirefox
+    image: selenium/node-firefox:4.22.0
+    volumes:
+    - /dev/shm:/dev/shm
+    env:
+      SE_EVENT_BUS_HOST: seleniumhub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+  - container: seleniumvideo
+    image: selenium/video:ffmpeg-6.1.1-20240621
+    volumes:
+      - /home/vsts/work/_temp/videos:/videos    
+    env:
+      DISPLAY_CONTAINER_NAME: selenium
+      SE_NODE_GRID_URL: http://seleniumhub:4444
+      SE_VIDEO_FILE_NAME: auto
+  - container: seleniumhub
+    image: selenium/hub:4.22.0
+    ports:
+      - "4442:4442"
+      - "4443:4443"
+      - "4444:4444"
+  
+stages:
+- stage: Build
+  jobs:
+  - job: CI_Build
+    displayName: 'Build the Web'
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    variables:
+      DockerFile: DevFun.Web/DevFun.Web/Dockerfile
+      BuildContext: DevFun.Web
+      ChartPath: DevFun.Web/DevFun.Web/charts/devfunweb
+      ArtifactSourceFolder: DevFun.Web/DevFun.Web
+      ArtifactName: DevFunWeb
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        useGlobalJson: true
+    - template: templates/general_BuildVersioning.yml
+    - template: templates/docker_BuildAndPublishImage.yml
+      parameters:
+        buildContext: $(BuildContext)
+        azureContainerRegistryServiceConnection: $(AzureContainerRegistryServiceConnection)
+        dockerRepositoryName: $(DockerRepositoryName)
+        dockerFile: $(DockerFile)
+        dockerArguments: '--build-arg BUILDID=$(Build.BuildId) --build-arg IMAGE_NET_ASPNET_VERSION=$(NetCoreAspNetVersion) --build-arg IMAGE_NET_SDK_VERSION=$(NetCoreSdkVersion)'
+        patProductsFeed: $(PatProductsFeed)
+        patDemoFeed: $(PatDemoFeed)
+        buildId: $(Build.BuildId)
+        buildNumber: $(Build.BuildNumber)
+        defaultWorkingDirectory: $(System.DefaultWorkingDirectory)
+        extractAndPublishTestResults: true
+        netCoreAspNetVersion: $(NetCoreAspNetVersion)
+        netCoreSdkVersion: $(NetCoreSdkVersion)
+    - template: templates/k8s_CreateHelmPackage.yml
+      parameters:
+        helmVersion: $(HelmVersion)
+        artifactStagingDirectory: $(Build.ArtifactStagingDirectory)
+        sourceFolder: $(ArtifactSourceFolder)
+        artifactName: $(ArtifactName)
+        chartPath: $(ChartPath)
+  - job: SystemTest_Build
+    displayName: 'Build the System Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+    container: mcr.microsoft.com/dotnet/sdk:$(NetCoreSdkVersion)
+    variables:
+      buildConfiguration: release
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        useGlobalJson: true
+    - template: templates/general_BuildVersioning.yml
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: 'sed -i "s|</configuration>|<packageSourceCredentials><Products><add key=\"Username\" value=\"PATProducts\" /><add key=\"ClearTextPassword\" value=\"$(PatProductsFeed)\" /></Products><DemoFeed><add key=\"Username\" value=\"PATProducts\" /><add key=\"ClearTextPassword\" value=\"$(PatDemoFeed)\" /></DemoFeed></packageSourceCredentials></configuration>|" nuget.config' # Required when targetType == inline
+      displayName: 'Set the feed PATs temporarily for the build'
+    - template: templates/build_BuildAndPublishSystemTests.yml
+      parameters:
+        systemTestProject: DevFun.Web/DevFun.Web.Ui.Tests/DevFun.Web.Ui.Tests.csproj
+        testArtifactsCopyRoot: DevFun.Web/DevFun.Web.Ui.Tests
+        buildConfiguration: $(buildConfiguration)
+- stage: IntegrationTests
+  displayName: 'Run Integration Tests'
+  dependsOn: Build
+  jobs:
+  - job: SystemTest
+    displayName: 'System tests with Selenium UI Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+      #name: Default
+      #name: LocalAgents
+    strategy:
+      matrix:
+        # chrome:
+        #   containerResource: seleniumChrome
+        #   targetBrowser: Chrome
+        # edge:
+        #   containerResource: seleniumEdge
+        #   targetBrowser: Edge
+        firefox:
+          containerResource: seleniumFirefox
+          targetBrowser: Firefox
+    services:
+      web: web
+      seleniumhub: seleniumhub
+      selenium: $[ variables['containerResource'] ]
+      seleniumvideo: seleniumvideo
+    container: worker
+    steps:
+      - checkout: none
+      - download: current
+        artifact: SystemTests
+        displayName: Download the SystemTests artifact
+      - template: templates/test_runseleniumtests.yml
+        parameters: 
+          SystemTestArtifactLocation: $(Pipeline.Workspace)/SystemTests
+          RunSettingsFileName: container.runsettings
+          TargetBrowser: $(targetBrowser)
+  
+- stage: PullRequest
+  displayName: 'Update Pull Request'
+  dependsOn: IntegrationTests
+  condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+  pool:
+    vmImage: 'ubuntu-latest'
+    #name: Default
+    #name: LocalAgents
+  jobs:
+  - job: UpdatePullRequest
+    displayName: 'Update the pull request with policies'
+    steps:
+    - checkout: none
+    - task: PullRequestStatus@0
+      displayName: 'Initialize status'
+      inputs:
+        name: 'deploy-devfunweb'
+        action: 'Create'
+        state: 'pending'
+        description: 'Deploy DevFun Web'
+
+- stage: TagReleaseVersion
+  displayName: 'Tag the release version'
+  dependsOn: IntegrationTests
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+  pool:
+    vmImage: 'ubuntu-latest'
+    #name: Default
+    #name: LocalAgents
+  jobs:
+  - job: TagReleaseVersionJob
+    displayName: 'Tag the release version'
+    steps:
+    - template: templates/general_GitTag.yml

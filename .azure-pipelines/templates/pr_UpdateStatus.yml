@@ -1,0 +1,39 @@
+parameters:
+- name: Name
+  type: string
+  default: 
+- name: Description
+  type: string
+  default: ""
+- name: PullRequestId
+  type: string
+  default: ""
+- name: DeploymentResult
+  type: string
+  default: ""
+- name: SystemTestResult
+  type: string
+  default: ""
+ 
+steps:
+- pwsh: |
+    $deploymentSuccess = "${{ parameters.DeploymentResult }}" -contains "Succeeded"
+    $testSuccess = "${{ parameters.SystemTestResult }}" -contains "Succeeded"
+    $overallSuccess = $deploymentSuccess -and $testSuccess
+    Write-Host "##vso[task.setvariable variable=PrDeploymentSuccess;]$overallSuccess"
+    if($overallSuccess){
+      Write-Host "##vso[task.setvariable variable=PrPolicyStatus;]succeeded"
+    }
+    else{
+      Write-Host "##vso[task.setvariable variable=PrPolicyStatus;]failed"
+    }
+  displayName: 'Calculate success state'
+- task: PullRequestStatus@0
+  displayName: 'Update PR deployment status success'
+  inputs:
+    name: '${{ parameters.Name }}'
+    action: 'Update'
+    state: $(PrPolicyStatus)
+    description: '${{ parameters.Description }}'
+    useDefined: true
+    pullRequestId: ${{ parameters.PullRequestId }}

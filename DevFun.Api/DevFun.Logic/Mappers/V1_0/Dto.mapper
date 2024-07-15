@@ -1,0 +1,12 @@
+SourceType: DevFun.Common.Entities.DevJoke
+DestinationType: DevFun.Common.Model.Dtos.V1_0.DevJokeDto
+---
+SourceType: DevFun.Common.Model.Dtos.V1_0.DevJokeDto
+DestinationType: DevFun.Common.Entities.DevJoke
+---
+SourceType: DevFun.Common.Entities.Category
+DestinationType: DevFun.Common.Model.Dtos.V1_0.CategoryDto
+---
+SourceType: DevFun.Common.Model.Dtos.V1_0.CategoryDto
+DestinationType: DevFun.Common.Entities.Category
+---

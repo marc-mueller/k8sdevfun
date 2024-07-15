@@ -1,0 +1,47 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+    <DockerComposeProjectPath>..\docker-compose.dcproj</DockerComposeProjectPath>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <DockerfileRunArguments>--network proauth</DockerfileRunArguments>
+    <UserSecretsId>bce8217a-2c09-4c9a-8f57-b200dcbd039d</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include=".config\dotnet-tools.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.12.0" />
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.6" />
+    <PackageReference Include="ReaFx.ApiServices.Common" Version="1.14.11" />
+    <PackageReference Include="ReaFx.DependencyInjection.Microsoft.Common" Version="1.14.11" />
+    <PackageReference Include="ReaFx.DependencyInjection.Microsoft.Server" Version="1.14.11" />
+    <PackageReference Include="ReaFx.DependencyInjection.AutofacAdapter" Version="1.14.11" />
+    <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.22.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.6" />
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.20.1" />
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Kubernetes.Tools.Targets" Version="1.1.0" />
+    <PackageReference Include="prometheus-net.AspNetCore" Version="8.2.1" />
+    <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" Version="8.2.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DevFun.Common.Model\DevFun.Common.Model.csproj" />
+    <ProjectReference Include="..\DevFun.Logic\DevFun.Logic.csproj" />
+    <ProjectReference Include="..\DevFun.Storage\DevFun.Storage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApiVersions Include="v1.0" />
+  </ItemGroup>
+
+  <Target Name="ToolRestore" BeforeTargets="PreBuildEvent" Condition="'$(IsCIBuild)'!='true'">
+    <Exec Command="dotnet tool restore --configfile &quot;$(BuildSettingsRoot)/nuget.config&quot; --tool-manifest &quot;$(ProjectDir).config/dotnet-tools.json&quot; --ignore-failed-sources" />
+  </Target>
+
+  <Target Name="ExecMany" AfterTargets="PostBuildEvent" Outputs="%(ApiVersions.Identity)" Condition="'$(IsCIBuild)'!='true'">
+    <Exec Command="dotnet swagger tofile --output &quot;../DevFun.Clients/swagger/devfun_%(ApiVersions.Identity).json&quot; &quot;$(TargetPath)&quot; &quot;%(ApiVersions.Identity)&quot;" WorkingDirectory="$(ProjectDir)" />
+  </Target>
+
+</Project>

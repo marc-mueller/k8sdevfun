@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ReaFx.DataAccess.Common" Version="1.14.11" />
+    <PackageReference Include="ReaFx.DependencyInjection.Common" Version="1.14.11" />
+    <PackageReference Include="ReaFx.Mapper.Generator" Version="1.14.11">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="ReaFx.Modularity.Common" Version="1.14.11" />
+    <PackageReference Include="ReaFx.Services.LabelManagement.ServerModule" Version="1.14.11" />
+    <PackageReference Include="ReaFx.Services.ViewDefinitionManagement.ServerModule" Version="1.14.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DevFun.Common.Model\DevFun.Common.Model.csproj" />
+    <ProjectReference Include="..\DevFun.Common\DevFun.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="Mappers\DetachedEntity.mapper" />
+    <AdditionalFiles Include="Mappers\V1_0\Dto.mapper" />
+  </ItemGroup>
+
+</Project>

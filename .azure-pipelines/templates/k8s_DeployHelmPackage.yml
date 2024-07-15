@@ -1,0 +1,80 @@
+parameters:
+- name: azureSubscription
+  type: string
+  default: 
+- name: clusterResourceGroup
+  type: string
+  default:
+- name: clusterName
+  type: string
+  default: 
+- name: clusterNamespace
+  type: string
+  default: 
+- name: chartPath
+  type: string
+  default: 
+- name: releaseName
+  type: string
+  default: 
+- name: buildId
+  type: string
+  default: 
+- name: releaseValuesFile
+  type: string
+  default: 
+- name: pullRequestId
+  type: string
+  default:
+
+steps:
+- task: Tokenizer@0
+  displayName: 'Run Tokenizer'
+  inputs:
+    sourceFilesPattern: '$(ReleaseValuesFile)'
+
+- task: HelmInstaller@0
+  displayName: 'Install Helm $(HelmVersion)'
+  inputs:
+    helmVersion: '$(HelmVersion)'
+    checkLatestHelmVersion: false
+    installKubectl: true
+
+- task: HelmDeploy@0
+  displayName: 'Helm upgrade release'
+  name: helmdeployment
+  inputs:
+    connectionType: 'Azure Resource Manager'
+    azureSubscription: ${{ parameters.azureSubscription }}
+    azureResourceGroup: ${{ parameters.clusterResourceGroup }}
+    kubernetesCluster: ${{ parameters.clusterName }}
+    useClusterAdmin: true
+    namespace: ${{ parameters.clusterNamespace }}
+    command: 'upgrade'
+    chartType: 'FilePath'
+    chartPath: ${{ parameters.chartPath }}
+    releaseName: ${{ parameters.releaseName }}
+    overrideValues: 'buildID=${{ parameters.buildId }}'
+    valueFile: ${{ parameters.releaseValuesFile }}
+
+- pwsh: |
+    $output = 
+    @"
+    $(helmdeployment.helmOutput)
+    "@
+    $output -match "Get the application URL by running these commands:\s*(https://\S*)"
+    Write-Host "##vso[task.setvariable variable=hosturl;isOutput=true]$($matches[1])"
+  name: extractUrl
+  condition: and(succeeded(), ne('${{ parameters.pullRequestId }}', ''))
+  
+- task: PullRequestComments@0
+  displayName: 'Post a pull request comment'
+  inputs:
+    content: 'The application has been deployed to: $(extractUrl.hosturl)'
+    status: 'Active'
+    type: 'system'
+    skipIfCommentExists: true
+    pullRequestId: ${{ parameters.pullRequestId }}
+    useDefined: true
+    commentId: ${{ parameters.releaseName }}
+  condition: and(succeeded(), ne('${{ parameters.pullRequestId }}', ''))

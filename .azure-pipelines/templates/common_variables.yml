@@ -1,0 +1,21 @@
+variables:
+- name: AzureSubscription
+  value: 'Microsoft Azure Sponsorship'
+- name: AzureContainerRegistry
+  value: '4taksdemoacr.azurecr.io'
+- name: azureContainerRegistryServiceConnection
+  value: 4taksDemoAcr
+- name: AzureResourceGroup
+  value: 'aksDemo'
+- name: KubernetesCluster
+  value: 'dev-aks-k8sdemo-westeurope'
+- name: KubectlVersion
+  value: '1.26.0'
+- name: HelmVersion
+  value: '3.12.0'
+- name: AzureContainerRegistry
+  value: '4taksdemoacr.azurecr.io'
+- name: NetCoreAspNetVersion
+  value: 8.0.6
+- name: NetCoreSdkVersion
+  value: 8.0.302

@@ -1,0 +1,69 @@
+parameters:
+- name: SystemTestArtifactLocation
+  type: string
+  default: "SystemTests"
+- name: RunSettingsFileName
+  type: string
+  default: ""
+- name: TargetBrowser
+  type: string
+  default: "Firefox"
+
+steps:    
+- script: |
+    mkdir -p /home/vsts/work/_temp/videos
+    sudo chmod 777 /home/vsts/work/_temp/videos
+    mkdir $(Build.ArtifactStagingDirectory)/TestResults
+  displayName: 'Create and set permissions for /home/vsts/work/_temp/videos'
+  target: host
+- task: Tokenizer@0
+  displayName: 'Tokenizer to set correct Urls'
+  inputs:
+    sourceFilesPattern: '**/*.runsettings'
+    sourcePath: ${{ parameters.SystemTestArtifactLocation }}
+- task: DotNetCoreCLI@2
+  displayName: "Run UI Tests"
+  inputs:
+    command: test 
+    projects: "${{ parameters.SystemTestArtifactLocation }}/**/*Ui.Tests.dll"
+    arguments: "--logger trx --settings ${{ parameters.SystemTestArtifactLocation }}/${{ parameters.RunSettingsFileName }} -- targetBrowser=${{ parameters.TargetBrowser }}"
+- task: CopyFiles@2
+  displayName: 'Copy test result video files to: $(Build.ArtifactStagingDirectory)/TestResults/videos'
+  inputs:
+    SourceFolder: '$(Agent.TempDirectory)/videos'
+    Contents: '**/*.mp4'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)/TestResults/videos'
+  condition: always()
+- task: PublishPipelineArtifact@1
+  displayName: 'Publish test result artifacts'
+  inputs:
+    targetPath: '$(Build.ArtifactStagingDirectory)/TestResults'
+    artifact: 'TestResults-${{ parameters.TargetBrowser }}-$(Build.BuildNumber)-$(System.JobAttempt)'
+  condition: always()
+
+- ${{ if ne(coalesce(variables['system.debug'], 'false'),'false') }}:
+  - pwsh: |
+      $containers = docker ps --all --format "{{.Names}}"
+      $webContainers = $containers |  Where-Object {$_ -match 'web'}
+  
+      foreach ($webContainer in $webContainers) {
+          Write-Host "Get logs of container: $webContainer"
+          docker logs $webContainer
+      }
+    displayName: 'Get logs of web containers'
+    target: host
+    continueOnError: true
+    condition: always()
+
+  - pwsh: |
+      $containers = docker ps --all --format "{{.Names}}"
+      $videoContainers = $containers |  Where-Object {$_ -match 'seleniumvideo'}
+    
+      foreach ($videoContainer in $videoContainers) {
+          Write-Host "Get logs of container: $videoContainer"
+          docker logs $videoContainer
+      }
+    displayName: 'Get logs of video containers'
+    target: host
+    continueOnError: true
+    condition: always()

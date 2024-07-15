@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ReaFx.ApiClients.Common" Version="1.14.11" />
+    <PackageReference Include="ReaFx.ApiClients.Generator" Version="1.14.11">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="ReaFx.Services.AuditTrail.Common" Version="1.14.11" />
+    <PackageReference Include="ReaFx.Services.LabelManagement.Common" Version="1.14.11" />
+    <PackageReference Include="ReaFx.Services.ViewDefinitionManagement.Common" Version="1.14.11" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DevFun.Common.Model\DevFun.Common.Model.csproj" />
+  </ItemGroup>
+
+</Project>

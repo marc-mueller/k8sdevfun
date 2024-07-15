@@ -1,0 +1,4 @@
+﻿docker network create grid
+docker run -d -p 4444:4444 --name seleniumFirefox --net grid  -v /dev/shm:/dev/shm selenium/standalone-firefox:4.0.0-rc-1-prerelease-20210618
+docker run -d --net grid --name seleniumFirefoxVideo -e DISPLAY_CONTAINER_NAME=seleniumfirefox -e FILE_NAME=firefox_video.mp4 -v C:\Temp\SeleniumVideos:/videos selenium/video:ffmpeg-4.3.1-20210618
+docker run -d -p 8765:80 --name devfun.web --net grid 4taksdemoacr.azurecr.io/devfunweb:0.1.29

@@ -1,0 +1,3 @@
+variables:
+- name: LicenseData
+  value: 'xxx'

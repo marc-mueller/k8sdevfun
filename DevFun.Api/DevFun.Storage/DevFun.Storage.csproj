@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ReaFx.DataAccess.EntityFramework" Version="1.14.11" />
+    <PackageReference Include="ReaFx.Modularity.Common" Version="1.14.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DevFun.Common\DevFun.Common.csproj" />
+  </ItemGroup>
+
+</Project>

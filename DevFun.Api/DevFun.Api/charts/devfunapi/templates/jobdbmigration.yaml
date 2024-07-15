@@ -1,0 +1,30 @@
+﻿apiVersion: batch/v1
+kind: Job
+metadata:
+  name: '{{ template "devfunapi.fullname" . }}-dbdeployment-{{ .Release.Revision }}'
+  labels:
+    app: {{ template "devfunapi.name" . }}
+    chart: {{ template "devfunapi.chart" . }}
+    draft: {{ .Values.draft | default "draft-app" }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: {{ template "devfunapi.name" . }}
+        draft: {{ .Values.draft | default "draft-app" }}
+        release: {{ .Release.Name }}
+        {{- if and .Values.deployworkloadIdentity.enabled (eq .Values.deployworkloadIdentity.provider "Azure") }}
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      serviceAccountName: devfunapi-deploy-service-account
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.dbdeployclirepository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["dotnet"]
+        args: ["DevFun.DbMigration.Cli.dll", "deploy", "--connectionstring", {{ .Values.secrets.connectionstring.connectionstrings__devfundatabase | quote }}, "--dacpacfile", "DevFun.DB.Build.dacpac"]
+      restartPolicy: Never  

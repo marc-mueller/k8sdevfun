@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <DefaultTargetFramework>net8.0</DefaultTargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Common">
+    <Authors>4tecture GmbH</Authors>
+    <Company>4tecture GmbH</Company>
+    <Copyright>Copyright 2024 (c) 4tecture GmbH. All rights reserved.</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
+    <DefaultLanguage>en-US</DefaultLanguage>
+  </PropertyGroup>
+
+  <PropertyGroup Label="C#">
+    <LangVersion>latest</LangVersion>
+    <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+    <!--<Nullable>enable</Nullable>--> <!-- not enable nullable, needs a big refactoring -->
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IncludeOpenAPIAnalyzers>true</IncludeOpenAPIAnalyzers>
+  </PropertyGroup>
+
+  <!-- Add async warnings as errors -->
+  <PropertyGroup>
+    <WarningsAsErrors>$(WarningsAsErrors);CS4014;LindhartAnalyserMissingAwaitWarning</WarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Add logging provider warnings as errors -->
+  <PropertyGroup Condition=" !($(MSBuildProjectName.ToLower().StartsWith('simpletrader.')))">
+    <WarningsAsErrors>$(WarningsAsErrors);CA1848;SYSLIB1006;SYSLIB1014;SYSLIB1015</WarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Add nuget warnings as errors -->
+  <PropertyGroup>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1601;NU1602;NU1603;NU1604;NU1605;NU1608;</WarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <!--<CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>-->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <!--<ItemGroup>
+    <AssemblyAttribute Include="Standard.Licensing.AssemblyBuildDate" Condition=" !($(MSBuildProjectName.ToLower().EndsWith('devfun.clients')) Or $(MSBuildProjectName.ToLower().EndsWith('devfun.common.model')) Or $(MSBuildProjectFullPath.ToLower().Contains('/tests/'))) ">
+      <_Parameter1>$([System.DateTime]::UtcNow.ToString("O"))</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>-->
+    
+</Project>

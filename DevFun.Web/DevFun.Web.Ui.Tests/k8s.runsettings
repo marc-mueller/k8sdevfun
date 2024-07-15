@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <!-- Parameters used by tests at runtime -->
+  <TestRunParameters>
+    <Parameter name="automationFramework" value="Selenium" />
+    <Parameter name="baseUrl" value="https://__IngressHostName__" />
+    <Parameter name="driverType" value="Remote" />
+    <Parameter name="remoteDriverUrl" value="http://seleniumhub:4444/wd/hub" />
+    <Parameter name="targetBrowser" value="Firefox" />
+    <Parameter name="resolutionWidth" value="1280" />
+    <Parameter name="resolutionHeight" value="768" />
+  </TestRunParameters>
+</RunSettings>
